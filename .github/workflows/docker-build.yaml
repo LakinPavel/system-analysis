@@ -17,6 +17,7 @@ jobs:
           go-version: '1.22'
       - name: Run tests
         run: go test ./... -v
+        working-directory: ./5_library
 
   build-and-push:
     needs: test
@@ -42,3 +43,4 @@ jobs:
           tags: |
             ${{ secrets.DOCKER_USERNAME }}/library-service:latest
             ${{ secrets.DOCKER_USERNAME }}/library-service:${{ github.sha }}
+
