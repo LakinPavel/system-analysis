@@ -22,6 +22,8 @@ type (
 		RegisterBook(ctx context.Context, name string, authorIDs []string) (entity.Book, error)
 		GetBook(ctx context.Context, bookID string) (entity.Book, error)
 		UpdateBook(ctx context.Context, bookID string, name string, authorIDs []string) error
+		ReserveBook(ctx context.Context, id string) (*entity.Book, error)
+		ReleaseBook(ctx context.Context, id string) (*entity.Book, error)
 	}
 )
 

@@ -92,8 +92,8 @@ func (p *postgresRepository) CreateBook(ctx context.Context, book entity.Book) (
 	defer tx.Rollback(ctx)
 
 	const queryBook = `
-INSERT INTO book (id, name)
-VALUES ($1,$2)
+INSERT INTO book (id, name, booked)
+VALUES ($1,$2,$3)
 RETURNING created_at, updated_at
 `
 
@@ -101,9 +101,10 @@ RETURNING created_at, updated_at
 		ID:        book.ID,
 		Name:      book.Name,
 		AuthorIDs: book.AuthorIDs,
+		Booked:    book.Booked,
 	}
 
-	err = tx.QueryRow(ctx, queryBook, book.ID, book.Name).Scan(&result.CreatedAt, &result.UpdatedAt)
+	err = tx.QueryRow(ctx, queryBook, book.ID, book.Name, book.Booked).Scan(&result.CreatedAt, &result.UpdatedAt)
 
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -149,14 +150,14 @@ WHERE id = $1
 
 func (p *postgresRepository) GetBook(ctx context.Context, bookID string) (entity.Book, error) {
 	const query = `
-SELECT id, name, created_at, updated_at
+SELECT id, name, created_at, updated_at, booked
 FROM book
 WHERE id = $1
 `
 
 	var book entity.Book
 	err := p.db.QueryRow(ctx, query, bookID).
-		Scan(&book.ID, &book.Name, &book.CreatedAt, &book.UpdatedAt)
+		Scan(&book.ID, &book.Name, &book.CreatedAt, &book.UpdatedAt, &book.Booked)
 
 	if errors.Is(err, sql.ErrNoRows) {
 		return entity.Book{}, entity.ErrBookNotFound
@@ -299,7 +300,7 @@ func (p *postgresRepository) GetAuthorBooks(ctx context.Context, authorID string
 	}
 
 	const query = `
-    SELECT b.id, b.name, b.created_at, b.updated_at
+    SELECT b.id, b.name, b.created_at, b.updated_at, b.booked
     FROM book b
     INNER JOIN author_book ab ON b.id = ab.book_id
     WHERE ab.author_id = $1
@@ -314,7 +315,7 @@ func (p *postgresRepository) GetAuthorBooks(ctx context.Context, authorID string
 	var books []entity.Book
 	for rows.Next() {
 		var book entity.Book
-		if err := rows.Scan(&book.ID, &book.Name, &book.CreatedAt, &book.UpdatedAt); err != nil {
+		if err := rows.Scan(&book.ID, &book.Name, &book.CreatedAt, &book.UpdatedAt, &book.Booked); err != nil {
 			return nil, err
 		}
 
@@ -342,4 +343,82 @@ func (p *postgresRepository) GetAuthorBooks(ctx context.Context, authorID string
 	}
 
 	return books, nil
+}
+
+func (p *postgresRepository) ReserveBook(ctx context.Context, bookID string) (entity.Book, error) {
+    tx, err := p.db.Begin(ctx)
+    if err != nil {
+        return entity.Book{}, err
+    }
+    defer tx.Rollback(ctx)
+
+    const updateQuery = `
+        UPDATE book
+        SET booked = true, updated_at = now()
+        WHERE id = $1
+        RETURNING id, name, created_at, updated_at, booked
+    `
+
+    var book entity.Book
+    err = tx.QueryRow(ctx, updateQuery, bookID).Scan(
+        &book.ID, &book.Name, &book.CreatedAt, &book.UpdatedAt, &book.Booked,
+    )
+    if err != nil {
+        return entity.Book{}, err
+    }
+
+    const authorsQuery = `
+        SELECT author_id
+        FROM author_book
+        WHERE book_id = $1
+    `
+    rows, err := tx.Query(ctx, authorsQuery, bookID)
+    if err != nil {
+        return entity.Book{}, err
+    }
+    defer rows.Close()
+
+    for rows.Next() {
+        var authorID string
+        if err := rows.Scan(&authorID); err != nil {
+            return entity.Book{}, err
+        }
+        book.AuthorIDs = append(book.AuthorIDs, authorID)
+    }
+
+    if err = tx.Commit(ctx); err != nil {
+        return entity.Book{}, err
+    }
+
+    return book, nil
+}
+
+func (p *postgresRepository) ReleaseBook(ctx context.Context, bookID string) (entity.Book, error) {
+    tx, err := p.db.Begin(ctx)
+    if err != nil {
+        return entity.Book{}, err
+    }
+    defer tx.Rollback(ctx)
+
+    const updateQuery = `
+        UPDATE book
+        SET booked = false, updated_at = now()
+        WHERE id = $1
+        RETURNING id, name, created_at, updated_at, booked
+    `
+
+    var book entity.Book
+    err = tx.QueryRow(ctx, updateQuery, bookID).Scan(
+        &book.ID, &book.Name, &book.CreatedAt, &book.UpdatedAt, &book.Booked,
+    )
+    if err != nil {
+        return entity.Book{}, err
+    }
+
+
+    if err = tx.Commit(ctx); err != nil {
+        return entity.Book{}, err
+    }
+
+    return book, nil
 }

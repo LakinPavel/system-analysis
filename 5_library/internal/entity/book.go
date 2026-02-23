@@ -13,6 +13,7 @@ type Book struct {
 	AuthorIDs []string
 	CreatedAt time.Time
 	UpdatedAt time.Time
+	Booked    bool
 }
 
 var (

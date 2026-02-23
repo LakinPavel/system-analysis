@@ -21,6 +21,7 @@ func (i *implementation) GetAuthorBooks(req *generated.GetAuthorBooksRequest, st
 			Id:       book.ID,
 			Name:     book.Name,
 			AuthorId: book.AuthorIDs,
+			Booked:    book.Booked,
 		}
 
 		if err := stream.Send(protoBook); err != nil {

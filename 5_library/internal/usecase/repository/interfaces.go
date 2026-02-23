@@ -18,5 +18,7 @@ type (
 		CreateBook(ctx context.Context, book entity.Book) (entity.Book, error)
 		GetBook(ctx context.Context, bookID string) (entity.Book, error)
 		UpdateBook(ctx context.Context, bookID string, name string, authorIDs []string) error
+		ReserveBook(ctx context.Context, bookID string) (entity.Book, error)
+		ReleaseBook(ctx context.Context, bookID string) (entity.Book, error)
 	}
 )

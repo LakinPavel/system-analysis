@@ -28,6 +28,7 @@ func (i *implementation) GetBookInfo(ctx context.Context, req *library.GetBookIn
 			AuthorId:  book.AuthorIDs,
 			CreatedAt: timestamppb.New(book.CreatedAt),
 			UpdatedAt: timestamppb.New(book.CreatedAt),
+			Booked:    book.Booked,
 		},
 	}, nil
 }

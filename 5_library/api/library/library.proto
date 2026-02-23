@@ -55,6 +55,20 @@ service Library {
       get: "/v1/library/author_books/{author_id}"
     };
   }
+
+  rpc ReserveBook(ReserveBookRequest) returns (ReserveBookResponse) {
+    option (google.api.http) = {
+      post: "/v1/library/book/{id}/reserve"
+      body: "*"
+    };
+  }
+
+  rpc ReleaseBook(ReleaseBookRequest) returns (ReleaseBookResponse) {
+    option (google.api.http) = {
+      post: "/v1/library/book/{id}/release"
+      body: "*"
+    };
+  }
 }
 
 
@@ -64,6 +78,7 @@ message Book {
   repeated string author_id = 3 [(validate.rules).repeated = {min_items: 0, max_items: 1000}];
   google.protobuf.Timestamp created_at = 4;
   google.protobuf.Timestamp updated_at = 5;
+  bool booked = 6;
 }
 
 
@@ -118,4 +133,20 @@ message GetAuthorInfoResponse {
 
 message GetAuthorBooksRequest {
   string author_id = 1 [(validate.rules).string.uuid = true];
+}
+
+message ReserveBookRequest {
+  string id = 1 [(validate.rules).string.uuid = true];
+}
+
+message ReserveBookResponse {
+  Book book = 1;
+}
+
+message ReleaseBookRequest {
+  string id = 1 [(validate.rules).string.uuid = true];
+}
+
+message ReleaseBookResponse {
+  Book book = 1;
 }

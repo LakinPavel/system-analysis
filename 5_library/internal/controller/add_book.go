@@ -29,6 +29,7 @@ func (i *implementation) AddBook(ctx context.Context, req *library.AddBookReques
 			AuthorId:  book.AuthorIDs,
 			CreatedAt: timestamppb.New(book.CreatedAt),
 			UpdatedAt: timestamppb.New(book.CreatedAt),
+			Booked:    book.Booked,
 		},
 	}, nil
 }
