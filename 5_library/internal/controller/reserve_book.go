@@ -14,7 +14,7 @@ func (i *implementation) ReserveBook(ctx context.Context, req *generated.Reserve
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	book, err := i.booksUseCase.ReserveBook(ctx, req.GetId())
+	book, err := i.booksUseCase.ReserveBook(ctx, req.GetId(), req.GetBookedBy())
 	if err != nil {
 		return nil, i.convertErr(err)
 	}
@@ -27,6 +27,23 @@ func (i *implementation) ReserveBook(ctx context.Context, req *generated.Reserve
 			CreatedAt: timestamppb.New(book.CreatedAt),
 			UpdatedAt: timestamppb.New(book.UpdatedAt),
 			Booked:    book.Booked,
+			BookedBy:  safeString(book.BookedBy),
+			ReservationStart: safeTimestamp(book.ReservationStart),
+			ReservationEnd:   safeTimestamp(book.ReservationEnd),
 		},
 	}, nil
+}
+
+func safeString(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+func safeTimestamp(t *time.Time) *timestamppb.Timestamp {
+	if t == nil {
+		return nil
+	}
+	return timestamppb.New(*t)
 }

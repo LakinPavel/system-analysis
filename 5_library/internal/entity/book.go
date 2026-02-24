@@ -14,6 +14,9 @@ type Book struct {
 	CreatedAt time.Time
 	UpdatedAt time.Time
 	Booked    bool
+	BookedBy  *string
+	ReservationStart *time.Time
+	ReservationEnd   *time.Time
 }
 
 var (

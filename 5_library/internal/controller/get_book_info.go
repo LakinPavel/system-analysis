@@ -29,6 +29,23 @@ func (i *implementation) GetBookInfo(ctx context.Context, req *library.GetBookIn
 			CreatedAt: timestamppb.New(book.CreatedAt),
 			UpdatedAt: timestamppb.New(book.CreatedAt),
 			Booked:    book.Booked,
+			BookedBy:  safeString(book.BookedBy),
+			ReservationStart: safeTimestamp(book.ReservationStart),
+			ReservationEnd:   safeTimestamp(book.ReservationEnd),
 		},
 	}, nil
+}
+
+func safeString(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+func safeTimestamp(t *time.Time) *timestamppb.Timestamp {
+	if t == nil {
+		return nil
+	}
+	return timestamppb.New(*t)
 }

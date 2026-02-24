@@ -92,8 +92,8 @@ func (p *postgresRepository) CreateBook(ctx context.Context, book entity.Book) (
 	defer tx.Rollback(ctx)
 
 	const queryBook = `
-INSERT INTO book (id, name, booked)
-VALUES ($1,$2,$3)
+INSERT INTO book (id, name, booked, booked_by, reservation_start, reservation_end)
+VALUES ($1,$2,$3,$4,$5,$6)
 RETURNING created_at, updated_at
 `
 
@@ -101,10 +101,13 @@ RETURNING created_at, updated_at
 		ID:        book.ID,
 		Name:      book.Name,
 		AuthorIDs: book.AuthorIDs,
-		Booked:    book.Booked,
+		Booked:    false,
+		BookedBy:  nil,
+        ReservationStart: nil,
+        ReservationEnd:   nil,
 	}
 
-	err = tx.QueryRow(ctx, queryBook, book.ID, book.Name, book.Booked).Scan(&result.CreatedAt, &result.UpdatedAt)
+	err = tx.QueryRow(ctx, queryBook, book.ID, book.Name, false, nil, nil, nil).Scan(&result.CreatedAt, &result.UpdatedAt)
 
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -150,14 +153,16 @@ WHERE id = $1
 
 func (p *postgresRepository) GetBook(ctx context.Context, bookID string) (entity.Book, error) {
 	const query = `
-SELECT id, name, created_at, updated_at, booked
+SELECT id, name, created_at, updated_at, booked, booked_by, reservation_start, reservation_end
 FROM book
 WHERE id = $1
 `
 
 	var book entity.Book
+	var bookedBy sql.NullString
+    var reservationStart, reservationEnd sql.NullTime
 	err := p.db.QueryRow(ctx, query, bookID).
-		Scan(&book.ID, &book.Name, &book.CreatedAt, &book.UpdatedAt, &book.Booked)
+		Scan(&book.ID, &book.Name, &book.CreatedAt, &book.UpdatedAt, &book.Booked&bookedBy, &reservationStart, &reservationEnd,)
 
 	if errors.Is(err, sql.ErrNoRows) {
 		return entity.Book{}, entity.ErrBookNotFound
@@ -166,6 +171,16 @@ WHERE id = $1
 	if err != nil {
 		return entity.Book{}, err
 	}
+
+	if bookedBy.Valid {
+        book.BookedBy = &bookedBy.String
+    }
+    if reservationStart.Valid {
+        book.ReservationStart = &reservationStart.Time
+    }
+    if reservationEnd.Valid {
+        book.ReservationEnd = &reservationEnd.Time
+    }
 
 	const queryAuthors = `
 SELECT author_id
@@ -300,7 +315,7 @@ func (p *postgresRepository) GetAuthorBooks(ctx context.Context, authorID string
 	}
 
 	const query = `
-    SELECT b.id, b.name, b.created_at, b.updated_at, b.booked
+    SELECT b.id, b.name, b.created_at, b.updated_at, b.booked, b.booked_by, b.reservation_start, b.reservation_end
     FROM book b
     INNER JOIN author_book ab ON b.id = ab.book_id
     WHERE ab.author_id = $1
@@ -315,7 +330,9 @@ func (p *postgresRepository) GetAuthorBooks(ctx context.Context, authorID string
 	var books []entity.Book
 	for rows.Next() {
 		var book entity.Book
-		if err := rows.Scan(&book.ID, &book.Name, &book.CreatedAt, &book.UpdatedAt, &book.Booked); err != nil {
+		var bookedBy sql.NullString
+        var reservationStart, reservationEnd sql.NullTime
+		if err := rows.Scan(&book.ID, &book.Name, &book.CreatedAt, &book.UpdatedAt, &book.Booked, &bookedBy, &reservationStart, &reservationEnd,); err != nil {
 			return nil, err
 		}
 
@@ -345,7 +362,7 @@ func (p *postgresRepository) GetAuthorBooks(ctx context.Context, authorID string
 	return books, nil
 }
 
-func (p *postgresRepository) ReserveBook(ctx context.Context, bookID string) (entity.Book, error) {
+func (p *postgresRepository) ReserveBook(ctx context.Context, bookID string, bookedBy string) (entity.Book, error) {
     tx, err := p.db.Begin(ctx)
     if err != nil {
         return entity.Book{}, err
@@ -354,17 +371,35 @@ func (p *postgresRepository) ReserveBook(ctx context.Context, bookID string) (en
 
     const updateQuery = `
         UPDATE book
-        SET booked = true, updated_at = now()
-        WHERE id = $1
-        RETURNING id, name, created_at, updated_at, booked
+        SET booked = true,
+            booked_by = $1,
+            reservation_start = now(),
+            reservation_end = now() + interval '14 days',
+            updated_at = now()
+        WHERE id = $2
+        RETURNING id, name, created_at, updated_at, booked,
+                  booked_by, reservation_start, reservation_end
     `
 
     var book entity.Book
-    err = tx.QueryRow(ctx, updateQuery, bookID).Scan(
-        &book.ID, &book.Name, &book.CreatedAt, &book.UpdatedAt, &book.Booked,
+	var bookedByDB sql.NullString
+    var reservationStart, reservationEnd sql.NullTime
+
+    err = tx.QueryRow(ctx, updateQuery, bookedBy, bookID).Scan(
+        &book.ID, &book.Name, &book.CreatedAt, &book.UpdatedAt, &book.Booked, &bookedByDB, &reservationStart, &reservationEnd,
     )
     if err != nil {
         return entity.Book{}, err
+    }
+
+	if bookedByDB.Valid {
+        book.BookedBy = &bookedByDB.String
+    }
+    if reservationStart.Valid {
+        book.ReservationStart = &reservationStart.Time
+    }
+    if reservationEnd.Valid {
+        book.ReservationEnd = &reservationEnd.Time
     }
 
     const authorsQuery = `
@@ -402,17 +437,54 @@ func (p *postgresRepository) ReleaseBook(ctx context.Context, bookID string) (en
 
     const updateQuery = `
         UPDATE book
-        SET booked = false, updated_at = now()
+        SET booked = false,
+            booked_by = NULL,
+            reservation_start = NULL,
+            reservation_end = NULL,
+            updated_at = now()
         WHERE id = $1
-        RETURNING id, name, created_at, updated_at, booked
+        RETURNING id, name, created_at, updated_at, booked,
+                  booked_by, reservation_start, reservation_end
     `
 
     var book entity.Book
+	var bookedByDB sql.NullString
+    var reservationStart, reservationEnd sql.NullTime
+
     err = tx.QueryRow(ctx, updateQuery, bookID).Scan(
-        &book.ID, &book.Name, &book.CreatedAt, &book.UpdatedAt, &book.Booked,
+        &book.ID, &book.Name, &book.CreatedAt, &book.UpdatedAt, &book.Booked, &bookedByDB, &reservationStart, &reservationEnd,
     )
     if err != nil {
         return entity.Book{}, err
+    }
+
+	if bookedByDB.Valid {
+        book.BookedBy = &bookedByDB.String
+    }
+    if reservationStart.Valid {
+        book.ReservationStart = &reservationStart.Time
+    }
+    if reservationEnd.Valid {
+        book.ReservationEnd = &reservationEnd.Time
+    }
+
+	const authorsQuery = `
+        SELECT author_id
+        FROM author_book
+        WHERE book_id = $1
+    `
+    rows, err := tx.Query(ctx, authorsQuery, bookID)
+    if err != nil {
+        return entity.Book{}, err
+    }
+    defer rows.Close()
+
+    for rows.Next() {
+        var authorID string
+        if err := rows.Scan(&authorID); err != nil {
+            return entity.Book{}, err
+        }
+        book.AuthorIDs = append(book.AuthorIDs, authorID)
     }
 
 
